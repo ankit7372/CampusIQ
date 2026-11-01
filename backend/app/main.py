@@ -2,7 +2,7 @@ import time
 import os
 from pathlib import Path
 from datetime import date
-
+from app.auth import get_current_user
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,16 +11,16 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
+from app.auth import router as auth_router
 from app.database import Base, engine, get_db
 from app import models
-from app.models import Student, Attendance, Course
-
+from app.models import Student, Attendance, Course, User
 
 # ---------------- ENVIRONMENT ----------------
 
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(ENV_FILE, override=True)
+Base.metadata.create_all(bind=engine)
 
 
 # ---------------- APPLICATION ----------------
@@ -31,23 +31,21 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Create missing tables without deleting existing records.
-Base.metadata.create_all(bind=engine)
+frontend_url = os.getenv("FRONTEND_URL")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://127.0.0.1:5173",
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        *([frontend_url] if frontend_url else []),
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-# ---------------- GENERAL APIs ----------------
-
+app.include_router(auth_router)
 @app.get("/")
 def home():
     return {
@@ -141,7 +139,10 @@ def create_student(
 
 
 @app.get("/students")
-def get_students(db: Session = Depends(get_db)):
+def get_students(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     students = db.query(Student).order_by(Student.id).all()
     return [student_data(student) for student in students]
 

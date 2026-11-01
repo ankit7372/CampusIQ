@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const ui = {
   app: {
@@ -142,6 +142,20 @@ function FormField({ label, children }) {
 }
 
 function App() {
+  const [token, setToken] = useState(
+  () => localStorage.getItem("campusiq_token") || ""
+);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerName, setRegisterName] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerError, setRegisterError] = useState("");
+  const [registerLoading, setRegisterLoading] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState("");
   const [page, setPage] = useState("Dashboard");
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState([]);
@@ -154,7 +168,6 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [courseLoading, setCourseLoading] = useState(false);
   const [courseSaving, setCourseSaving] = useState(false);
-
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("success");
 
@@ -183,8 +196,105 @@ function App() {
     setMessageType(type);
   };
 
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    setLoginError("");
+
+    if (loginLoading) return;
+    setLoginLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: loginEmail.trim(),
+          password: loginPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail || "Login failed. Please check your credentials."
+        );
+      }
+
+      if (!data.access_token) {
+        throw new Error("Login token was not received.");
+      }
+
+      setToken(data.access_token);
+      localStorage.setItem("campusiq_token", data.access_token);
+      setLoginPassword("");
+      setPage("Dashboard");
+    } catch (error) {
+      setLoginError(error.message || "Unable to connect to the server.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+const handleRegister = async (event) => {
+  event.preventDefault();
+  setRegisterError("");
+  setRegisterSuccess("");
+
+  if (registerLoading) return;
+
+  setRegisterLoading(true);
+
+  try {
+    const response = await fetch(`${API_URL}/auth/signup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: registerName.trim(),
+        email: registerEmail.trim(),
+        password: registerPassword,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === "string"
+          ? data.detail
+          : "Registration failed. Please check your details."
+      );
+    }
+
+    setRegisterSuccess("Account created successfully! Please log in.");
+    setRegisterName("");
+    setRegisterEmail("");
+    setRegisterPassword("");
+  } catch (error) {
+    setRegisterError(error.message || "Unable to connect to the server.");
+  } finally {
+    setRegisterLoading(false);
+  }
+};
+
+
+
+
+
   const request = async (path, options = {}) => {
-    const response = await fetch(`${API_URL}${path}`, options);
+    const headers = { ...options.headers };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
     const text = await response.text();
 
     let data = null;
@@ -270,7 +380,7 @@ function App() {
     } catch (error) {
       showMessage(`Failed to load student records: ${error.message}`, "error");
     }
-  }, []);
+  }, [token]);
 
   // ---------------- ATTENDANCE FUNCTIONS ----------------
 
@@ -292,7 +402,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [filterDate, filterStudent]);
+  }, [filterDate, filterStudent, token]);
 
   // ---------------- COURSE FUNCTIONS ----------------
 
@@ -307,23 +417,25 @@ function App() {
     } finally {
       setCourseLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
-    loadStudents();
-  }, [loadStudents]);
+    if (token) {
+      loadStudents();
+    }
+  }, [token, loadStudents]);
 
   useEffect(() => {
-    if (page === "Attendance") {
+    if (token && page === "Attendance") {
       loadAttendance();
     }
-  }, [page, loadAttendance]);
+  }, [token, page, loadAttendance]);
 
   useEffect(() => {
-    if (page === "Courses") {
+    if (token && page === "Courses") {
       loadCourses();
     }
-  }, [page, loadCourses]);
+  }, [token, page, loadCourses]);
 
   const resetStudentForm = () => {
     setStudentName("");
@@ -575,6 +687,184 @@ function App() {
     </>
   );
 
+
+  if (!token) {
+    const isRegistering = showRegister;
+
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f4f7fb",
+          padding: 20,
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        <form
+          onSubmit={isRegistering ? handleRegister : handleLogin}
+          style={{
+            width: "100%",
+            maxWidth: 420,
+            background: "#ffffff",
+            padding: 30,
+            borderRadius: 14,
+            boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
+            boxSizing: "border-box",
+          }}
+        >
+          <h1 style={{ color: "#172554", marginTop: 0 }}>CampusIQ AI</h1>
+
+          <p style={{ color: "#64748b", marginBottom: 26 }}>
+            {isRegistering
+              ? "Create your CampusIQ account"
+              : "Sign in to your campus dashboard"}
+          </p>
+
+          {isRegistering && (
+            <>
+              <label htmlFor="register-name" style={ui.label}>
+                Full Name
+              </label>
+              <input
+                id="register-name"
+                type="text"
+                autoComplete="name"
+                required
+                value={registerName}
+                onChange={(event) => setRegisterName(event.target.value)}
+                placeholder="Enter your full name"
+                style={{ ...ui.input, marginBottom: 18 }}
+              />
+            </>
+          )}
+
+          <label
+            htmlFor={isRegistering ? "register-email" : "login-email"}
+            style={ui.label}
+          >
+            Email Address
+          </label>
+          <input
+            id={isRegistering ? "register-email" : "login-email"}
+            type="email"
+            autoComplete="email"
+            required
+            value={isRegistering ? registerEmail : loginEmail}
+            onChange={(event) =>
+              isRegistering
+                ? setRegisterEmail(event.target.value)
+                : setLoginEmail(event.target.value)
+            }
+            placeholder={
+              isRegistering
+                ? "Enter your email address"
+                : "Enter your registered email"
+            }
+            style={{ ...ui.input, marginBottom: 18 }}
+          />
+
+          <label
+            htmlFor={isRegistering ? "register-password" : "login-password"}
+            style={ui.label}
+          >
+            Password
+          </label>
+          <input
+            id={isRegistering ? "register-password" : "login-password"}
+            type="password"
+            autoComplete={isRegistering ? "new-password" : "current-password"}
+            required
+            value={isRegistering ? registerPassword : loginPassword}
+            onChange={(event) =>
+              isRegistering
+                ? setRegisterPassword(event.target.value)
+                : setLoginPassword(event.target.value)
+            }
+            placeholder={
+              isRegistering ? "Create a password" : "Enter your password"
+            }
+            style={{ ...ui.input, marginBottom: 18 }}
+          />
+
+          {loginError && !isRegistering && (
+            <p role="alert" style={{ color: "#b91c1c", fontSize: 14 }}>
+              {loginError}
+            </p>
+          )}
+
+          {registerError && isRegistering && (
+            <p role="alert" style={{ color: "#b91c1c", fontSize: 14 }}>
+              {registerError}
+            </p>
+          )}
+
+          {registerSuccess && (
+            <p role="status" style={{ color: "#166534", fontSize: 14 }}>
+              {registerSuccess}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={isRegistering ? registerLoading : loginLoading}
+            style={{
+              ...ui.button,
+              width: "100%",
+              opacity:
+                (isRegistering ? registerLoading : loginLoading) ? 0.7 : 1,
+            }}
+          >
+            {isRegistering
+              ? registerLoading
+                ? "Creating account..."
+                : "Create Account"
+              : loginLoading
+                ? "Signing in..."
+                : "Login"}
+          </button>
+
+          <p
+            style={{
+              color: "#64748b",
+              fontSize: 14,
+              textAlign: "center",
+              marginTop: 22,
+              marginBottom: 0,
+            }}
+          >
+            {isRegistering
+              ? "Already have an account? "
+              : "Don't have an account? "}
+            <button
+              type="button"
+              disabled={loginLoading || registerLoading}
+              onClick={() => {
+                setShowRegister(!isRegistering);
+                setLoginError("");
+                setRegisterError("");
+                setRegisterSuccess("");
+              }}
+              style={{
+                border: 0,
+                background: "transparent",
+                color: "#4338ca",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              {isRegistering ? "Login" : "Register"}
+            </button>
+          </p>
+        </form>
+      </div>
+    );
+  }
+
+
   return (
     <div className="campusiq-app" style={ui.app}>
       <style>{`
@@ -665,6 +955,26 @@ function App() {
             </button>
           ))}
         </nav>
+        <button
+          type="button"
+          style={{ ...ui.navButton, marginTop: 16 }}
+          onClick={() => {
+            setToken("");
+            localStorage.removeItem("campusiq_token");
+            setPage("Dashboard");
+            setMessage("");
+            setLoginError("");
+            setLoginPassword("");
+            setChatMessages([]);
+            setChatInput("");
+          }}
+         >
+          Logout
+        </button>
+
+
+
+
       </aside>
 
       <main className="campusiq-main" style={ui.main}>
